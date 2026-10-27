@@ -216,3 +216,31 @@ button.large { padding: 0.65rem 1.4rem; font-size: 1rem; }
   .code-viewer { position: static; max-height: 70vh; }
   .topbar { padding: 0.6rem 1rem; }
 }
+
+.home { max-width: 760px; width: 100%; margin: 2rem auto 4rem; padding: 0 1rem; }
+.repo-form { display: flex; gap: 8px; margin: 1.25rem 0 0.5rem; }
+.repo-form input {
+  flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;
+}
+.repo-form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.lesson-list, .suggestions { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.lesson-card { width: 100%; text-align: left; display: grid; gap: 2px; padding: 0.75rem 1rem; }
+.lesson-card:hover { border-color: var(--accent); }
+.lesson-card__repo { font-size: 0.8rem; color: var(--muted); }
+.lesson-card__title { font-weight: 600; }
+
+.suggestion { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.1rem; }
+.suggestion h2 { font-size: 1.1rem; margin: 0 0 0.25rem; }
+.suggestion p { margin: 0.35rem 0; }
+.suggestion .primary { margin-top: 0.5rem; }
+
+.warnings { margin: 0 0 1rem; font-size: 0.85rem; background: var(--warn-soft); border-radius: 8px; padding: 0.5rem 0.75rem; }
+.warnings summary { cursor: pointer; color: var(--warn); font-weight: 600; }
+.warnings ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+
+@media (max-width: 560px) {
+  .repo-form { flex-direction: column; }
+}

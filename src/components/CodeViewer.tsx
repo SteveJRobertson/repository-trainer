@@ -25,17 +25,21 @@ export function CodeViewer({repo, focus, highlights = [], onLineClick, marks = [
   const dark = useDarkMode();
   const body = useRef<HTMLDivElement>(null);
   const focusRow = useRef<HTMLDivElement>(null);
-  const ready = file.status === 'ready';
+  const text = file.status === 'ready' ? file.text : undefined;
+  const scrolledText = useRef<string>(undefined);
 
   // Scroll only the code pane, vertically, so the focused range sits a little
   // above centre. scrollIntoView would also scroll the page and pan sideways.
+  // Moving within one file is animated; a newly loaded file jumps straight there.
   useEffect(() => {
     const container = body.current;
     const row = focusRow.current;
-    if (container && row) {
-      container.scrollTo({top: Math.max(0, row.offsetTop - container.clientHeight / 3), left: 0, behavior: 'smooth'});
+    if (container && row && text !== undefined) {
+      const sameFile = scrolledText.current === text;
+      scrolledText.current = text;
+      container.scrollTo({top: Math.max(0, row.offsetTop - container.clientHeight / 3), left: 0, behavior: sameFile ? 'smooth' : 'instant'});
     }
-  }, [focus, ready]);
+  }, [focus, text]);
 
   const githubUrl = `https://github.com/${repo.owner}/${repo.name}/blob/${repo.commit}/${focus.path}#L${focus.startLine}-L${focus.endLine}`;
 
