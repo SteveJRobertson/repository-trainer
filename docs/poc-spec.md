@@ -15,12 +15,14 @@ In:
 - A React/TypeScript lesson player (Vite) that renders lessons from JSON.
 - One hand-written lesson first (step 2), then AI-generated lessons (step 3).
 - A validator that checks every code reference in a lesson against the pinned repository.
+- Feature suggestions: after analysing the repo, the app proposes 3 to 5 features to learn (from structure, exports and open issues) and the learner picks one.
+- A flow diagram per lesson showing how the files involved connect, with each node linked to code.
 
 Out, for now:
 
 - The "how to install and use the app" journey.
 - Running repository code, in any form.
-- Private repositories, accounts, persistence beyond `localStorage`.
+- Private repositories (so no work repos yet), accounts, persistence beyond `localStorage`.
 - Languages other than TypeScript/JavaScript.
 
 ## Lesson format
@@ -34,7 +36,24 @@ type Lesson = {
   repo: { owner: string; name: string; commit: string };
   feature: string;               // one sentence: what the learner will understand
   estimatedMinutes: number;
+  diagram: Diagram;              // overview of the flow, shown beside the steps
   steps: Step[];                 // 4 to 8 steps
+};
+
+// Nodes are files or functions; edges are calls or data passed.
+// Every node must link to code, so the diagram obeys the same grounding rules.
+type Diagram = {
+  nodes: { id: string; label: string; ref: CodeRef }[];
+  edges: { from: string; to: string; label?: string; evidence: 'verified' | 'inferred' }[];
+};
+
+// Produced by the analysis stage (step 3) for the learner to choose from.
+type FeatureSuggestion = {
+  id: string;
+  title: string;                 // "How failed requests are retried"
+  why: string;                   // one sentence on why it is worth learning
+  entryPoints: CodeRef[];        // where the lesson would start
+  relatedIssues?: { number: number; title: string }[];
 };
 
 type Step = {
@@ -98,8 +117,8 @@ Every option carries its own feedback, so a wrong answer explains itself and lin
 - Generated lessons pass the validator at least most of the time, and failures are reported clearly.
 - Steve can use a lesson on an unfamiliar repo and say whether it helped more than asking a chatbot.
 
-## Open questions
+## Decisions
 
-- Should the learner pick the feature, or should the app suggest a few from the repo's structure and open issues?
-- Is a static flow diagram per lesson worth it in the PoC, or later?
-- Which repo from Steve's job to use as the second test in step 4?
+- The app suggests features to learn; the learner picks one (2026-10-27).
+- Each lesson includes a flow diagram (2026-10-27).
+- The step 4 trial uses a second public repo, since Steve's work repos are private (2026-10-27).
