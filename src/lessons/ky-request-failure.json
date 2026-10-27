@@ -1,0 +1,761 @@
+{
+  "id": "ky-request-failure",
+  "title": "What happens when a ky request fails?",
+  "repo": {
+    "owner": "sindresorhus",
+    "name": "ky",
+    "commit": "3541888878c4d303a8bc2ad61815f4e048f55a5d"
+  },
+  "feature": "Follow a failing GET request from `ky.get()` through retries and hooks until it rejects, then find where you would change the retry rules.",
+  "estimatedMinutes": 10,
+  "diagram": {
+    "nodes": [
+      {
+        "id": "method",
+        "label": "ky.get()",
+        "ref": {
+          "path": "source/index.ts",
+          "startLine": 39,
+          "endLine": 39,
+          "excerpt": "\t\tky[method] = (input: Input, options?: Options) => createRequest(input, () => validateAndMerge(defaults, options, {method}));",
+          "note": "Every HTTP method shortcut calls createRequest"
+        }
+      },
+      {
+        "id": "create",
+        "label": "Ky.create()",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 349,
+          "endLine": 366,
+          "excerpt": "\tstatic create(input: Input, options: Options): ResponsePromise {\n\t\tconst initHooks = options.hooks?.init ?? [];\n\t\tconst initHookOptions = initHooks.length > 0 ? cloneInitHookOptions(options) : options;\n\n\t\tfor (const hook of initHooks) {\n\t\t\thook(initHookOptions as InitOptions);\n\t\t}\n\n\t\tconst ky = new Ky(input, initHookOptions);\n\n\t\tconst result = (async () => {\n\t\t\tlet response: Response | undefined;\n\t\t\ttry {\n\t\t\t\tresponse = await ky.#run();\n\t\t\t\treturn response;\n\t\t\t} catch (error: unknown) {\n\t\t\t\treturn await ky.#throwProcessedError(error);\n\t\t\t} finally {"
+        }
+      },
+      {
+        "id": "run",
+        "label": "#run()",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 590,
+          "endLine": 598,
+          "excerpt": "\tasync #run(): Promise<Response | undefined> {\n\t\t// Delay the fetch so that body method shortcuts can set the Accept header\n\t\tawait Promise.resolve();\n\t\tconst beforeRequestResponse = await this.#runBeforeRequestHooks();\n\t\tif (beforeRequestResponse !== undefined) {\n\t\t\tthis.#retryLimit = normalizeRetryOptions(this.#options.retry).limit;\n\t\t}\n\n\t\tlet response = beforeRequestResponse ?? await this.#retry();"
+        }
+      },
+      {
+        "id": "fetch",
+        "label": "#retry() / #fetch()",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 1117,
+          "endLine": 1123,
+          "excerpt": "\tasync #retry(): Promise<Response | void> {\n\t\ttry {\n\t\t\treturn await this.#fetch();\n\t\t} catch (error) {\n\t\t\treturn this.#retryFromError(error);\n\t\t}\n\t}"
+        }
+      },
+      {
+        "id": "httpError",
+        "label": "new HTTPError",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 632,
+          "endLine": 634,
+          "excerpt": "\t\t\t\tconst httpError: HTTPError = new HTTPError(currentResponse, this.#getResponseRequest(currentResponse), this.#getNormalizedOptions());\n\t\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\t\thttpError.data = await this.#getResponseData(currentResponse);"
+        }
+      },
+      {
+        "id": "retryFromError",
+        "label": "#retryFromError()",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 1125,
+          "endLine": 1128,
+          "excerpt": "\tasync #retryFromError(error: unknown): Promise<Response | void> {\n\t\tthis.#throwIfAbortedByUser();\n\n\t\tconst retryDelay = Math.min(await this.#calculateRetryDelay(error), maxSafeTimeout);"
+        }
+      },
+      {
+        "id": "decide",
+        "label": "#calculateRetryDelay()",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 688,
+          "endLine": 692,
+          "excerpt": "\tasync #calculateRetryDelay(error: unknown) {\n\t\tconst retry = normalizeRetryOptions(this.#options.retry);\n\t\tif (this.#retryCount >= Math.min(retry.limit, this.#retryLimit)) {\n\t\t\tthrow error;\n\t\t}"
+        }
+      },
+      {
+        "id": "defaults",
+        "label": "default retry options",
+        "ref": {
+          "path": "source/utils/normalize.ts",
+          "startLine": 25,
+          "endLine": 35,
+          "excerpt": "const defaultRetryOptions: InternalRetryOptions = {\n\tlimit: 2,\n\tmethods: retryMethods,\n\tstatusCodes: retryStatusCodes,\n\tafterStatusCodes: retryAfterStatusCodes,\n\tmaxRetryAfter: Number.POSITIVE_INFINITY,\n\tbackoffLimit: Number.POSITIVE_INFINITY,\n\tdelay: attemptCount => 0.3 * (2 ** (attemptCount - 1)) * 1000,\n\tjitter: undefined,\n\tretryOnTimeout: false,\n};"
+        }
+      },
+      {
+        "id": "processError",
+        "label": "#throwProcessedError()",
+        "ref": {
+          "path": "source/core/Ky.ts",
+          "startLine": 783,
+          "endLine": 809,
+          "excerpt": "\tasync #throwProcessedError(error: unknown, request: Request = this.#sentRequest): Promise<never> {\n\t\t// Non-Error throws (e.g., thrown strings) pass through unchanged. `isError` reads the internal brand, so an error from another realm still runs the hooks, the same way the Ky type guards accept branded errors.\n\t\tif (!isError(error)) {\n\t\t\tthrow error;\n\t\t}\n\n\t\t// Errors thrown by beforeRetry hooks must propagate unchanged.\n\t\tif (this.#beforeRetryHookErrors.has(error)) {\n\t\t\tthrow error;\n\t\t}\n\n\t\tlet processedError: Error = error;\n\t\tfor (const hook of this.#options.hooks.beforeError) {\n\t\t\t// `options` intentionally remains the stable normalized Ky options snapshot for the same reason as `HTTPError` above.\n\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\tconst hookResult: unknown = await hook({\n\t\t\t\trequest,\n\t\t\t\toptions: this.#getNormalizedOptions(),\n\t\t\t\terror: processedError,\n\t\t\t\tretryCount: this.#retryCount,\n\t\t\t});\n\n\t\t\t// Only overwrite if the hook returns a valid Error, including one from another realm.\n\t\t\tif (isError(hookResult)) {\n\t\t\t\tprocessedError = hookResult;\n\t\t\t}\n\t\t}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "method",
+        "to": "create",
+        "label": "createRequest",
+        "evidence": "verified"
+      },
+      {
+        "from": "create",
+        "to": "run",
+        "evidence": "verified"
+      },
+      {
+        "from": "run",
+        "to": "fetch",
+        "evidence": "verified"
+      },
+      {
+        "from": "run",
+        "to": "httpError",
+        "label": "response not ok",
+        "evidence": "verified"
+      },
+      {
+        "from": "httpError",
+        "to": "retryFromError",
+        "evidence": "verified"
+      },
+      {
+        "from": "retryFromError",
+        "to": "decide",
+        "evidence": "verified"
+      },
+      {
+        "from": "decide",
+        "to": "defaults",
+        "label": "reads",
+        "evidence": "verified"
+      },
+      {
+        "from": "retryFromError",
+        "to": "fetch",
+        "label": "try again",
+        "evidence": "verified"
+      },
+      {
+        "from": "create",
+        "to": "processError",
+        "label": "gave up",
+        "evidence": "verified"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "entry",
+      "title": "Start at the call you write",
+      "explanation": "You call `ky.get(url)`. Every method shortcut on the default instance is a thin wrapper: it merges your options with the defaults and hands off to `createRequest`, which calls `Ky.create()`.",
+      "code": [
+        {
+          "path": "source/index.ts",
+          "startLine": 36,
+          "endLine": 40,
+          "excerpt": "\n\tfor (const method of requestMethods) {\n\t\t// eslint-disable-next-line @typescript-eslint/promise-function-async\n\t\tky[method] = (input: Input, options?: Options) => createRequest(input, () => validateAndMerge(defaults, options, {method}));\n\t}"
+        },
+        {
+          "path": "source/index.ts",
+          "startLine": 17,
+          "endLine": 31,
+          "excerpt": "const createRequest = (input: Input, getOptions: () => Options): ResponsePromise => {\n\ttry {\n\t\treturn Ky.create(input, getOptions());\n\t} catch (error: unknown) {\n\t\t// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- A hook can throw any value, and it must be preserved exactly.\n\t\tconst result = Promise.reject(error) as ResponsePromise;\n\t\t// Matches `Ky.create()`, which only exposes `.bytes()` when the environment implements it.\n\t\tfor (const type of getSupportedResponseTypes()) {\n\t\t\t// Returning the same promise marks it as handled, so a body method call does not also report an unhandled rejection.\n\t\t\tresult[type] = async () => result as never;\n\t\t}\n\n\t\treturn result;\n\t}\n};"
+        }
+      ],
+      "claims": [
+        {
+          "text": "`ky.get`, `ky.post` and the other shortcuts all go through `createRequest`.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/index.ts",
+              "startLine": 39,
+              "endLine": 39,
+              "excerpt": "\t\tky[method] = (input: Input, options?: Options) => createRequest(input, () => validateAndMerge(defaults, options, {method}));"
+            }
+          ]
+        },
+        {
+          "text": "If setting up the request throws, you get a rejected promise rather than a synchronous throw.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/index.ts",
+              "startLine": 20,
+              "endLine": 22,
+              "excerpt": "\t} catch (error: unknown) {\n\t\t// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- A hook can throw any value, and it must be preserved exactly.\n\t\tconst result = Promise.reject(error) as ResponsePromise;"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "choice",
+        "prompt": "To see what actually happens to the request, which file would you open next?",
+        "options": [
+          {
+            "id": "ky",
+            "label": "source/core/Ky.ts",
+            "correct": true,
+            "feedback": "`createRequest` calls `Ky.create()`, and the `Ky` class lives here. This is where the request lifecycle is.",
+            "ref": {
+              "path": "source/index.ts",
+              "startLine": 19,
+              "endLine": 19,
+              "excerpt": "\t\treturn Ky.create(input, getOptions());"
+            }
+          },
+          {
+            "id": "merge",
+            "label": "source/utils/merge.ts",
+            "correct": false,
+            "feedback": "`validateAndMerge` only combines your options with the defaults. It never sends anything.",
+            "ref": {
+              "path": "source/index.ts",
+              "startLine": 39,
+              "endLine": 39,
+              "excerpt": "\t\tky[method] = (input: Input, options?: Options) => createRequest(input, () => validateAndMerge(defaults, options, {method}));"
+            }
+          },
+          {
+            "id": "types",
+            "label": "source/types/ky.ts",
+            "correct": false,
+            "feedback": "That file only declares the `KyInstance` type. Types describe the shape, not the behaviour."
+          }
+        ]
+      }
+    },
+    {
+      "id": "create",
+      "title": "Ky.create() owns the outcome",
+      "explanation": "`Ky.create()` builds a `Ky` instance and awaits its private `#run()` method. Whatever `#run()` throws is caught here and passed to `#throwProcessedError()`. Keep that `catch` in mind: it is where a failed request finally leaves ky.",
+      "code": [
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 349,
+          "endLine": 366,
+          "excerpt": "\tstatic create(input: Input, options: Options): ResponsePromise {\n\t\tconst initHooks = options.hooks?.init ?? [];\n\t\tconst initHookOptions = initHooks.length > 0 ? cloneInitHookOptions(options) : options;\n\n\t\tfor (const hook of initHooks) {\n\t\t\thook(initHookOptions as InitOptions);\n\t\t}\n\n\t\tconst ky = new Ky(input, initHookOptions);\n\n\t\tconst result = (async () => {\n\t\t\tlet response: Response | undefined;\n\t\t\ttry {\n\t\t\t\tresponse = await ky.#run();\n\t\t\t\treturn response;\n\t\t\t} catch (error: unknown) {\n\t\t\t\treturn await ky.#throwProcessedError(error);\n\t\t\t} finally {"
+        }
+      ],
+      "claims": [
+        {
+          "text": "Errors from the whole request lifecycle end up in one `catch` block in `Ky.create()`.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/core/Ky.ts",
+              "startLine": 361,
+              "endLine": 366,
+              "excerpt": "\t\t\ttry {\n\t\t\t\tresponse = await ky.#run();\n\t\t\t\treturn response;\n\t\t\t} catch (error: unknown) {\n\t\t\t\treturn await ky.#throwProcessedError(error);\n\t\t\t} finally {"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "predict",
+        "prompt": "Suppose `#run()` throws an `HTTPError`. What happens before your code sees it?",
+        "options": [
+          {
+            "id": "hooks",
+            "label": "Your `beforeError` hooks get a chance to inspect or replace it",
+            "correct": true,
+            "feedback": "Right. `#throwProcessedError()` loops over `hooks.beforeError`, and a hook can return a different error to throw instead."
+          },
+          {
+            "id": "raw",
+            "label": "Nothing, it is rethrown unchanged",
+            "correct": false,
+            "feedback": "Not quite. The `catch` calls `#throwProcessedError()`, which runs `beforeError` hooks first."
+          },
+          {
+            "id": "swallow",
+            "label": "It is logged and the promise resolves with `undefined`",
+            "correct": false,
+            "feedback": "ky never swallows errors here. `#throwProcessedError()` always ends with `throw`."
+          }
+        ],
+        "reveal": {
+          "path": "source/core/Ky.ts",
+          "startLine": 795,
+          "endLine": 811,
+          "excerpt": "\t\tfor (const hook of this.#options.hooks.beforeError) {\n\t\t\t// `options` intentionally remains the stable normalized Ky options snapshot for the same reason as `HTTPError` above.\n\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\tconst hookResult: unknown = await hook({\n\t\t\t\trequest,\n\t\t\t\toptions: this.#getNormalizedOptions(),\n\t\t\t\terror: processedError,\n\t\t\t\tretryCount: this.#retryCount,\n\t\t\t});\n\n\t\t\t// Only overwrite if the hook returns a valid Error, including one from another realm.\n\t\t\tif (isError(hookResult)) {\n\t\t\t\tprocessedError = hookResult;\n\t\t\t}\n\t\t}\n\n\t\tthrow processedError;"
+        }
+      }
+    },
+    {
+      "id": "run-loop",
+      "title": "A 500 arrives",
+      "explanation": "`#run()` sends the request through `#retry()`, then checks the response. If it is not `ok`, ky builds an `HTTPError`, reads the error body into `error.data`, and hands it to `#retryFromError()`.",
+      "code": [
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 590,
+          "endLine": 598,
+          "excerpt": "\tasync #run(): Promise<Response | undefined> {\n\t\t// Delay the fetch so that body method shortcuts can set the Accept header\n\t\tawait Promise.resolve();\n\t\tconst beforeRequestResponse = await this.#runBeforeRequestHooks();\n\t\tif (beforeRequestResponse !== undefined) {\n\t\t\tthis.#retryLimit = normalizeRetryOptions(this.#options.retry).limit;\n\t\t}\n\n\t\tlet response = beforeRequestResponse ?? await this.#retry();"
+        },
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 621,
+          "endLine": 647,
+          "excerpt": "\t\t\tif (retryError === undefined) {\n\t\t\t\tconst currentResponse: Response = response;\n\n\t\t\t\t// Opaque responses (`response.type === 'opaque'`) from `no-cors` requests always have `status: 0` and `ok: false`, but this is not a failure - the actual status is hidden by the browser.\n\t\t\t\tif (currentResponse.ok || currentResponse.type === 'opaque' || !this.#shouldThrowHttpErrors(currentResponse)) {\n\t\t\t\t\tbreak;\n\t\t\t\t}\n\n\t\t\t\t// `request` must reflect the request that actually failed, but `options` stays as Ky's\n\t\t\t\t// normalized options snapshot. Replacement `Request` instances do not preserve the\n\t\t\t\t// original `BodyInit`, so trying to make `options` mirror arbitrary requests would be lossy.\n\t\t\t\tconst httpError: HTTPError = new HTTPError(currentResponse, this.#getResponseRequest(currentResponse), this.#getNormalizedOptions());\n\t\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\t\thttpError.data = await this.#getResponseData(currentResponse);\n\t\t\t\tthis.#throwIfAbortedByUser();\n\t\t\t\tthis.#throwIfTotalTimeoutExhausted();\n\n\t\t\t\tif (responseFromHook) {\n\t\t\t\t\tthrow httpError;\n\t\t\t\t}\n\n\t\t\t\tretryError = httpError;\n\t\t\t}\n\n\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\tresponse = await this.#retryFromError(retryError);\n\t\t}"
+        }
+      ],
+      "claims": [
+        {
+          "text": "A non-2xx response becomes an `HTTPError` only when `throwHttpErrors` allows it.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/core/Ky.ts",
+              "startLine": 625,
+              "endLine": 625,
+              "excerpt": "\t\t\t\tif (currentResponse.ok || currentResponse.type === 'opaque' || !this.#shouldThrowHttpErrors(currentResponse)) {"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "predict",
+        "prompt": "A GET request gets a 500 back. With default options, what does `#run()` do next?",
+        "options": [
+          {
+            "id": "throw",
+            "label": "Throws the `HTTPError` straight to your code",
+            "correct": false,
+            "feedback": "Not yet. The error is passed to `#retryFromError()` first. It only reaches your code if retrying is refused or exhausted."
+          },
+          {
+            "id": "retry",
+            "label": "Builds an `HTTPError` and passes it to `#retryFromError()`",
+            "correct": true,
+            "feedback": "Exactly. Building the error and retrying are separate. The error object travels into the retry logic, which decides whether to try again."
+          },
+          {
+            "id": "return",
+            "label": "Returns the response so you can check `response.ok`",
+            "correct": false,
+            "feedback": "That only happens when `throwHttpErrors` is turned off.",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 625,
+              "endLine": 625,
+              "excerpt": "\t\t\t\tif (currentResponse.ok || currentResponse.type === 'opaque' || !this.#shouldThrowHttpErrors(currentResponse)) {"
+            }
+          }
+        ],
+        "reveal": {
+          "path": "source/core/Ky.ts",
+          "startLine": 632,
+          "endLine": 646,
+          "excerpt": "\t\t\t\tconst httpError: HTTPError = new HTTPError(currentResponse, this.#getResponseRequest(currentResponse), this.#getNormalizedOptions());\n\t\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\t\thttpError.data = await this.#getResponseData(currentResponse);\n\t\t\t\tthis.#throwIfAbortedByUser();\n\t\t\t\tthis.#throwIfTotalTimeoutExhausted();\n\n\t\t\t\tif (responseFromHook) {\n\t\t\t\t\tthrow httpError;\n\t\t\t\t}\n\n\t\t\t\tretryError = httpError;\n\t\t\t}\n\n\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\tresponse = await this.#retryFromError(retryError);"
+        }
+      }
+    },
+    {
+      "id": "http-error",
+      "title": "What an HTTPError carries",
+      "explanation": "An `HTTPError` keeps the `response`, the `request` that actually failed, and the normalised `options`. `#run()` also fills in `data` with the parsed body before any hooks run.",
+      "code": [
+        {
+          "path": "source/errors/HTTPError.ts",
+          "startLine": 15,
+          "endLine": 33,
+          "excerpt": "export class HTTPError<T = unknown> extends KyError {\n\toverride name = 'HTTPError';\n\tresponse: KyResponse<T>;\n\trequest: KyRequest;\n\toptions: Readonly<NormalizedOptions>;\n\tdata: T | string | undefined;\n\n\tconstructor(response: Response, request: Request, options: Readonly<NormalizedOptions>) {\n\t\tconst code = (response.status || response.status === 0) ? response.status : '';\n\t\tconst title = response.statusText ?? '';\n\t\tconst status = `${code} ${title}`.trim();\n\t\tconst reason = status ? `status code ${status}` : 'an unknown error';\n\n\t\tsuper(`Request failed with ${reason}: ${request.method} ${request.url}`);\n\n\t\tthis.response = response;\n\t\tthis.request = request;\n\t\tthis.options = options;\n\t}"
+        },
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 632,
+          "endLine": 634,
+          "excerpt": "\t\t\t\tconst httpError: HTTPError = new HTTPError(currentResponse, this.#getResponseRequest(currentResponse), this.#getNormalizedOptions());\n\t\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\t\thttpError.data = await this.#getResponseData(currentResponse);"
+        }
+      ],
+      "claims": [
+        {
+          "text": "The response body is already consumed when you catch the error, so `error.response.json()` will not work.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/errors/HTTPError.ts",
+              "startLine": 11,
+              "endLine": 11,
+              "excerpt": "The response body is automatically consumed when populating `error.data`, so `error.response.json()` and other body methods will not work. Use `error.data` instead. The `error.response` object is still available for headers, status, etc."
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "choice",
+        "prompt": "You catch an `HTTPError` and want the JSON the server sent back. Where do you read it?",
+        "options": [
+          {
+            "id": "data",
+            "label": "`error.data`",
+            "correct": true,
+            "feedback": "Yes. `#run()` sets `httpError.data` from the response before throwing.",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 634,
+              "endLine": 634,
+              "excerpt": "\t\t\t\thttpError.data = await this.#getResponseData(currentResponse);"
+            }
+          },
+          {
+            "id": "json",
+            "label": "`await error.response.json()`",
+            "correct": false,
+            "feedback": "The body has already been read to fill `error.data`, so reading it again fails.",
+            "ref": {
+              "path": "source/errors/HTTPError.ts",
+              "startLine": 11,
+              "endLine": 11,
+              "excerpt": "The response body is automatically consumed when populating `error.data`, so `error.response.json()` and other body methods will not work. Use `error.data` instead. The `error.response` object is still available for headers, status, etc."
+            }
+          },
+          {
+            "id": "message",
+            "label": "`JSON.parse(error.message)`",
+            "correct": false,
+            "feedback": "The message is built from the status, method and URL, not the body.",
+            "ref": {
+              "path": "source/errors/HTTPError.ts",
+              "startLine": 28,
+              "endLine": 28,
+              "excerpt": "\t\tsuper(`Request failed with ${reason}: ${request.method} ${request.url}`);"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "decide",
+      "title": "Should ky try again?",
+      "explanation": "`#calculateRetryDelay()` is a series of gates. Any gate can `throw error`, which ends retrying. If every gate passes, it returns how long to wait. The defaults it compares against live in `normalize.ts`.",
+      "code": [
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 688,
+          "endLine": 760,
+          "excerpt": "\tasync #calculateRetryDelay(error: unknown) {\n\t\tconst retry = normalizeRetryOptions(this.#options.retry);\n\t\tif (this.#retryCount >= Math.min(retry.limit, this.#retryLimit)) {\n\t\t\tthrow error;\n\t\t}\n\n\t\t// Wrap non-Error throws to ensure consistent error handling. `NonError.wrap()` checks with `isError` rather than `instanceof`, so a cross-realm error reaches `shouldRetry` as itself, the same way it reaches `beforeError`.\n\t\tconst errorObject = NonError.wrap(error);\n\n\t\t// Handle forced retry from afterResponse hook - skip method check and shouldRetry\n\t\tif (isForceRetryError(errorObject)) {\n\t\t\treturn errorObject.customDelay ?? this.#calculateDelay(retry, error);\n\t\t}\n\n\t\t// Check if method is retriable for non-forced retries\n\t\tif (!retry.methods.includes(normalizeRetryMethod(this.request.method))) {\n\t\t\tthrow error;\n\t\t}\n\n\t\tlet shouldRetryOverride = false;\n\t\tconst {shouldRetry} = retry;\n\t\tif (shouldRetry !== undefined) {\n\t\t\tconst result = await this.#raceWithTotalTimeout(async () => shouldRetry({error: errorObject, retryCount: this.#retryCount + 1}));\n\t\t\tthis.#throwIfAbortedByUser();\n\t\t\tif (result === timedOut) {\n\t\t\t\tthrow new TimeoutError(this.#sentRequest);\n\t\t\t}\n\n\t\t\t// Only exact booleans override the default retry checks.\n\t\t\tif (result === false) {\n\t\t\t\tthrow error;\n\t\t\t}\n\n\t\t\tshouldRetryOverride = result === true;\n\t\t}\n\n\t\t// Default timeout behavior\n\t\tif (isTimeoutError(error)) {\n\t\t\tif (!shouldRetryOverride && !retry.retryOnTimeout) {\n\t\t\t\tthrow error;\n\t\t\t}\n\n\t\t\treturn this.#calculateDelay(retry, error);\n\t\t}\n\n\t\tif (isHTTPError(error)) {\n\t\t\tif (!shouldRetryOverride && !retry.statusCodes.includes(error.response.status)) {\n\t\t\t\tthrow error;\n\t\t\t}\n\n\t\t\tconst retryTimingHeader = getRetryTimingHeader(error.response.headers);\n\t\t\tif (retryTimingHeader && retry.afterStatusCodes.includes(error.response.status)) {\n\t\t\t\tconst after = calculateRetryTimingDelay(retryTimingHeader);\n\t\t\t\tif (after === undefined) {\n\t\t\t\t\t// Malformed retry timing headers should not disable retries; they only lose their server-provided timing.\n\t\t\t\t\treturn this.#calculateDelay(retry, error);\n\t\t\t\t}\n\n\t\t\t\t// Don't apply jitter when server provides explicit retry timing\n\t\t\t\treturn Math.min(retry.maxRetryAfter, after);\n\t\t\t}\n\n\t\t\tif (!shouldRetryOverride && error.response.status === 413) {\n\t\t\t\tthrow error;\n\t\t\t}\n\n\t\t\treturn this.#calculateDelay(retry, error);\n\t\t}\n\n\t\t// Only retry known retriable error types. Unknown errors (e.g., programming bugs) are not retried.\n\t\tif (!shouldRetryOverride && !isNetworkError(error)) {\n\t\t\tthrow error;\n\t\t}"
+        },
+        {
+          "path": "source/utils/normalize.ts",
+          "startLine": 17,
+          "endLine": 35,
+          "excerpt": "const retryMethods: HttpMethod[] = ['get', 'put', 'head', 'delete', 'options', 'trace', 'query'];\n\nconst retryStatusCodes = [408, 413, 429, 500, 502, 503, 504];\n\nconst retryAfterStatusCodes = [413, 429, 503];\n\ntype InternalRetryOptions = InternalOptions['retry'];\n\nconst defaultRetryOptions: InternalRetryOptions = {\n\tlimit: 2,\n\tmethods: retryMethods,\n\tstatusCodes: retryStatusCodes,\n\tafterStatusCodes: retryAfterStatusCodes,\n\tmaxRetryAfter: Number.POSITIVE_INFINITY,\n\tbackoffLimit: Number.POSITIVE_INFINITY,\n\tdelay: attemptCount => 0.3 * (2 ** (attemptCount - 1)) * 1000,\n\tjitter: undefined,\n\tretryOnTimeout: false,\n};"
+        }
+      ],
+      "claims": [
+        {
+          "text": "By default ky retries twice, on status codes 408, 413, 429, 500, 502, 503 and 504.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/utils/normalize.ts",
+              "startLine": 19,
+              "endLine": 19,
+              "excerpt": "const retryStatusCodes = [408, 413, 429, 500, 502, 503, 504];"
+            },
+            {
+              "path": "source/utils/normalize.ts",
+              "startLine": 26,
+              "endLine": 28,
+              "excerpt": "\tlimit: 2,\n\tmethods: retryMethods,\n\tstatusCodes: retryStatusCodes,"
+            }
+          ]
+        },
+        {
+          "text": "POST is not in the default retry methods, because repeating it could create something twice.",
+          "evidence": "inferred",
+          "refs": [
+            {
+              "path": "source/utils/normalize.ts",
+              "startLine": 17,
+              "endLine": 17,
+              "excerpt": "const retryMethods: HttpMethod[] = ['get', 'put', 'head', 'delete', 'options', 'trace', 'query'];"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "locate",
+        "prompt": "In `#calculateRetryDelay()`, click the line that stops a failed POST request from being retried.",
+        "hint": "Look for the gate that checks the request method.",
+        "answer": {
+          "path": "source/core/Ky.ts",
+          "startLine": 703,
+          "endLine": 703,
+          "excerpt": "\t\tif (!retry.methods.includes(normalizeRetryMethod(this.request.method))) {"
+        },
+        "tolerance": 1
+      }
+    },
+    {
+      "id": "hooks",
+      "title": "Hooks along the way",
+      "explanation": "ky calls your hooks at fixed points. For a GET that keeps failing, the attempt loop repeats `fetch`, `afterResponse` and `beforeRetry` until the limit is reached. `beforeRequest` only runs once, before the first attempt.",
+      "code": [
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 1041,
+          "endLine": 1048,
+          "excerpt": "\tasync #runBeforeRequestHooks(): Promise<Response | undefined> {\n\t\tfor (const hook of this.#options.hooks.beforeRequest) {\n\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\tconst result = await this.#raceWithTotalTimeout(async () => hook({\n\t\t\t\trequest: this.request,\n\t\t\t\toptions: this.#getNormalizedOptions(),\n\t\t\t\tretryCount: 0,\n\t\t\t}));"
+        },
+        {
+          "path": "source/core/Ky.ts",
+          "startLine": 1163,
+          "endLine": 1172,
+          "excerpt": "\t\tfor (const hook of this.#options.hooks.beforeRetry) {\n\t\t\tlet hookResult: Awaited<ReturnType<typeof hook>> | typeof timedOut;\n\t\t\ttry {\n\t\t\t\t// eslint-disable-next-line no-await-in-loop\n\t\t\t\thookResult = await this.#raceWithTotalTimeout(async () => hook({\n\t\t\t\t\trequest: this.request,\n\t\t\t\t\toptions: this.#getNormalizedOptions(),\n\t\t\t\t\terror: NonError.wrap(error),\n\t\t\t\t\tretryCount: this.#retryCount + 1,\n\t\t\t\t}));"
+        }
+      ],
+      "claims": [
+        {
+          "text": "`beforeRequest` hooks run once per call and always see `retryCount: 0`.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/core/Ky.ts",
+              "startLine": 593,
+              "endLine": 593,
+              "excerpt": "\t\tconst beforeRequestResponse = await this.#runBeforeRequestHooks();"
+            },
+            {
+              "path": "source/core/Ky.ts",
+              "startLine": 1047,
+              "endLine": 1047,
+              "excerpt": "\t\t\t\tretryCount: 0,"
+            }
+          ]
+        },
+        {
+          "text": "`beforeRetry` hooks see the attempt number they are about to start.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/core/Ky.ts",
+              "startLine": 1171,
+              "endLine": 1171,
+              "excerpt": "\t\t\t\t\tretryCount: this.#retryCount + 1,"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "order",
+        "prompt": "Put these in the order they first happen for a GET that fails, is retried, and eventually gives up.",
+        "items": [
+          {
+            "id": "init",
+            "label": "`init` hooks",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 353,
+              "endLine": 355,
+              "excerpt": "\t\tfor (const hook of initHooks) {\n\t\t\thook(initHookOptions as InitOptions);\n\t\t}"
+            }
+          },
+          {
+            "id": "beforeRequest",
+            "label": "`beforeRequest` hooks",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 593,
+              "endLine": 593,
+              "excerpt": "\t\tconst beforeRequestResponse = await this.#runBeforeRequestHooks();"
+            }
+          },
+          {
+            "id": "fetch",
+            "label": "The actual `fetch`",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 598,
+              "endLine": 598,
+              "excerpt": "\t\tlet response = beforeRequestResponse ?? await this.#retry();"
+            }
+          },
+          {
+            "id": "afterResponse",
+            "label": "`afterResponse` hooks",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 612,
+              "endLine": 612,
+              "excerpt": "\t\t\t\tresponse = await this.#runAfterResponseHooks(response);"
+            }
+          },
+          {
+            "id": "beforeRetry",
+            "label": "`beforeRetry` hooks",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 1163,
+              "endLine": 1163,
+              "excerpt": "\t\tfor (const hook of this.#options.hooks.beforeRetry) {"
+            }
+          },
+          {
+            "id": "beforeError",
+            "label": "`beforeError` hooks",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 795,
+              "endLine": 795,
+              "excerpt": "\t\tfor (const hook of this.#options.hooks.beforeError) {"
+            }
+          }
+        ],
+        "correct": [
+          "init",
+          "beforeRequest",
+          "fetch",
+          "afterResponse",
+          "beforeRetry",
+          "beforeError"
+        ],
+        "feedback": "`init` runs inside `Ky.create()` before the instance exists. `#run()` calls `beforeRequest`, then `#retry()` fetches. `afterResponse` sees the 500, `#retryFromError()` runs `beforeRetry`, and once retries run out the `catch` in `Ky.create()` runs `beforeError`."
+      }
+    },
+    {
+      "id": "change",
+      "title": "Make a change",
+      "explanation": "Imagine the maintainers agree that ky should also retry `425 Too Early` by default. You now know every place involved in that decision.",
+      "claims": [
+        {
+          "text": "Adding a status code to the default list is enough for GET requests to retry it, because the status gate reads `retry.statusCodes`.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "source/core/Ky.ts",
+              "startLine": 734,
+              "endLine": 734,
+              "excerpt": "\t\t\tif (!shouldRetryOverride && !retry.statusCodes.includes(error.response.status)) {"
+            },
+            {
+              "path": "source/utils/normalize.ts",
+              "startLine": 28,
+              "endLine": 28,
+              "excerpt": "\tstatusCodes: retryStatusCodes,"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "choice",
+        "prompt": "Where is the smallest correct change?",
+        "options": [
+          {
+            "id": "norm",
+            "label": "Add `425` to `retryStatusCodes` in source/utils/normalize.ts",
+            "correct": true,
+            "feedback": "Yes. It is a one-line change to the defaults, and every gate keeps working as before.",
+            "ref": {
+              "path": "source/utils/normalize.ts",
+              "startLine": 19,
+              "endLine": 19,
+              "excerpt": "const retryStatusCodes = [408, 413, 429, 500, 502, 503, 504];"
+            }
+          },
+          {
+            "id": "gate",
+            "label": "Add an `if (status === 425)` check in `#calculateRetryDelay()`",
+            "correct": false,
+            "feedback": "It would work, but it bypasses the configurable list, so users could not turn it off with `retry.statusCodes`.",
+            "ref": {
+              "path": "source/core/Ky.ts",
+              "startLine": 734,
+              "endLine": 734,
+              "excerpt": "\t\t\tif (!shouldRetryOverride && !retry.statusCodes.includes(error.response.status)) {"
+            }
+          },
+          {
+            "id": "error",
+            "label": "Change the `HTTPError` constructor",
+            "correct": false,
+            "feedback": "`HTTPError` only describes a failure. It plays no part in deciding whether to retry."
+          }
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "title": "Prove it works",
+      "explanation": "ky's retry tests start a local server that counts requests. To prove your change, you would copy a test that fails with a retryable status and check the request count. Run them with `npm test`.",
+      "code": [
+        {
+          "path": "test/retry.ts",
+          "startLine": 286,
+          "endLine": 302,
+          "excerpt": "test('status code 500', async t => {\n\tlet requestCount = 0;\n\n\tconst server = await createHttpTestServer(t);\n\tserver.get('/', (_request, response) => {\n\t\trequestCount++;\n\n\t\tif (requestCount === defaultRetryCount + 1) {\n\t\t\tresponse.end(fixture);\n\t\t} else {\n\t\t\tresponse.sendStatus(500);\n\t\t}\n\t});\n\n\tt.is(await ky(server.url).text(), fixture);\n\tt.is(requestCount, defaultRetryCount + 1);\n});"
+        }
+      ],
+      "claims": [
+        {
+          "text": "With the default limit, a retried request is sent `defaultRetryCount + 1` times in total.",
+          "evidence": "verified",
+          "refs": [
+            {
+              "path": "test/retry.ts",
+              "startLine": 121,
+              "endLine": 121,
+              "excerpt": "const defaultRetryCount = 2;"
+            },
+            {
+              "path": "test/retry.ts",
+              "startLine": 301,
+              "endLine": 301,
+              "excerpt": "\tt.is(requestCount, defaultRetryCount + 1);"
+            }
+          ]
+        }
+      ],
+      "activity": {
+        "kind": "choice",
+        "prompt": "Your new test sends 425 twice, then 200. What should it assert?",
+        "options": [
+          {
+            "id": "count",
+            "label": "The body is returned and the server saw 3 requests",
+            "correct": true,
+            "feedback": "Right. That mirrors the existing \"status code 500\" test: success on the third attempt proves both retries happened.",
+            "ref": {
+              "path": "test/retry.ts",
+              "startLine": 300,
+              "endLine": 301,
+              "excerpt": "\tt.is(await ky(server.url).text(), fixture);\n\tt.is(requestCount, defaultRetryCount + 1);"
+            }
+          },
+          {
+            "id": "throws",
+            "label": "The call throws an `HTTPError` with status 425",
+            "correct": false,
+            "feedback": "That would prove 425 is still not retried, the opposite of your change."
+          },
+          {
+            "id": "one",
+            "label": "The server saw exactly 1 request",
+            "correct": false,
+            "feedback": "One request means no retry happened. Compare the \"only on defined status codes\" test, which asserts exactly that for a 400.",
+            "ref": {
+              "path": "test/retry.ts",
+              "startLine": 318,
+              "endLine": 319,
+              "excerpt": "\tawait t.throwsAsync(ky(server.url).text(), {message: /Bad Request/});\n\tt.is(requestCount, 1);"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
