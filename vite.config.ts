@@ -26,7 +26,7 @@ function api(): Plugin {
 }
 
 export default defineConfig(({mode}) => {
-  // Make .env.local values (ANTHROPIC_API_KEY, GITHUB_TOKEN) visible to the server code.
+  // Make .env.local values (AI keys, GITHUB_TOKEN) visible to the server code.
   for (const [key, value] of Object.entries(loadEnv(mode, process.cwd(), ''))) {
     process.env[key] ??= value;
   }

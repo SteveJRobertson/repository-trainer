@@ -15,15 +15,14 @@ export type AskModel = <T extends z.ZodType>(request: {
 
 export class ModelError extends Error {}
 
-export const MODEL = process.env.TRAINER_MODEL ?? 'claude-opus-5-5';
-
 export function createClaude(): AskModel {
   const client = new Anthropic();
+  const model = process.env.CLAUDE_MODEL ?? 'claude-opus-5-5';
   return async ({schema, system, turns, effort}) => {
     try {
       // Streamed because lessons are long; finalMessage() gives the parsed result.
       const stream = client.beta.messages.stream({
-        model: MODEL,
+        model,
         max_tokens: 64000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',

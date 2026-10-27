@@ -6,7 +6,11 @@ export type SuggestResponse = {
   summary: string;
   suggestions: FeatureSuggestion[];
   skipped: number;
+  goal?: string;
 };
+
+export type ProviderId = 'claude' | 'chatgpt' | 'gemini';
+export type ProviderInfo = {id: ProviderId; label: string; keyVar: string; available: boolean};
 
 export type LessonResponse = {lesson: Lesson; warnings: string[]};
 
@@ -20,7 +24,16 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return data;
 }
 
-export const suggestFeatures = (repo: string) => post<SuggestResponse>('/api/suggestions', {repo});
+export async function listProviders(): Promise<ProviderInfo[]> {
+  const response = await fetch('/api/providers');
+  if (!response.ok) {
+    throw new Error(`The server returned ${response.status}.`);
+  }
 
-export const generateLesson = (repo: RepoPin, suggestion: FeatureSuggestion) =>
-  post<LessonResponse>('/api/lessons', {repo: `${repo.owner}/${repo.name}`, commit: repo.commit, suggestion});
+  return response.json() as Promise<ProviderInfo[]>;
+}
+
+export const suggestFeatures = (repo: string, provider: ProviderId, goal?: string) => post<SuggestResponse>('/api/suggestions', {repo, provider, goal});
+
+export const generateLesson = (repo: RepoPin, suggestion: FeatureSuggestion, provider: ProviderId, goal?: string) =>
+  post<LessonResponse>('/api/lessons', {repo: `${repo.owner}/${repo.name}`, commit: repo.commit, suggestion, provider, goal});

@@ -218,12 +218,26 @@ button.large { padding: 0.65rem 1.4rem; font-size: 1rem; }
 }
 
 .home { max-width: 760px; width: 100%; margin: 2rem auto 4rem; padding: 0 1rem; }
-.repo-form { display: flex; gap: 8px; margin: 1.25rem 0 0.5rem; }
-.repo-form input {
-  flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--surface);
+.repo-form { display: grid; gap: 14px; margin: 1.25rem 0 0.5rem; }
+.field { display: grid; gap: 4px; min-width: 0; border: none; padding: 0; margin: 0; }
+.field__label { font-weight: 600; font-size: 0.9rem; padding: 0; }
+.repo-form input, .repo-form textarea {
+  min-width: 0; font: inherit; color: inherit; background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;
 }
-.repo-form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.repo-form textarea { resize: vertical; }
+.repo-form input:focus-visible, .repo-form textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.repo-form > button { justify-self: start; }
+.provider-picker__options { display: flex; flex-wrap: wrap; gap: 6px; }
+.provider-option {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0.35rem 0.85rem;
+}
+.provider-option:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.provider-option:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+.provider-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.provider-option input { margin: 0; accent-color: var(--accent); }
+.goal-echo { font-style: italic; color: var(--muted); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .lesson-list, .suggestions { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -242,5 +256,5 @@ button.large { padding: 0.65rem 1.4rem; font-size: 1rem; }
 .warnings ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }
 
 @media (max-width: 560px) {
-  .repo-form { flex-direction: column; }
+  .repo-form > button { justify-self: stretch; }
 }

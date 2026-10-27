@@ -124,3 +124,5 @@ Every option carries its own feedback, so a wrong answer explains itself and lin
 - The step 4 trial uses a second public repo, since Steve's work repos are private (2026-10-27).
 - Hands-on "add a feature" practice (an in-browser code-editing activity and a build-a-feature lesson) comes after generation, as its own step (2026-10-27).
 - Generation (step 3): the model cites code as a line range plus a short quote, and the server copies excerpts from the file itself. References that fail are sent back once for repair, then removed and listed as warnings (2026-10-27).
+- The learner picks the AI provider: Claude, ChatGPT or Gemini, so the tool works where only some are approved. All three share one structured-output interface and the same grounding (2026-10-27).
+- The learner can say what they want to learn or walk through. That request steers both the suggestions and the lesson (2026-10-27).
