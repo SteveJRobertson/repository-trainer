@@ -29,19 +29,19 @@ function loadFile(repo: RepoPin, path: string): Promise<string> {
 }
 
 export function useRepoFile(repo: RepoPin, path: string): FileState {
-  const [state, setState] = useState<FileState>({status: 'loading'});
+  const [state, setState] = useState<FileState & {path?: string}>({status: 'loading'});
 
   useEffect(() => {
     let cancelled = false;
-    setState({status: 'loading'});
     loadFile(repo, path).then(
-      text => !cancelled && setState({status: 'ready', text}),
-      (error: unknown) => !cancelled && setState({status: 'error', message: error instanceof Error ? error.message : String(error)}),
+      text => !cancelled && setState({status: 'ready', text, path}),
+      (error: unknown) => !cancelled && setState({status: 'error', message: error instanceof Error ? error.message : String(error), path}),
     );
     return () => {
       cancelled = true;
     };
   }, [repo, path]);
 
-  return state;
+  // State left over from the previous file must never be shown under the new path.
+  return state.path === path ? state : {status: 'loading'};
 }
