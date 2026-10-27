@@ -14,6 +14,8 @@ Given a map of a repository, suggest 3 to 5 features a newcomer could learn in a
 
 For each suggestion, name 1 to 3 entry points as a file path and the exact name of a function, class, method or exported symbol defined in that file, as listed in the repository map. Only use paths and names that appear in the map. Only list issue numbers that appear in the issue list and genuinely relate to the feature.
 
+When the learner says what they want to learn or walk through, suggest 1 to 3 features that answer it most directly instead, best match first. If the repository doesn't contain what they asked about, say so plainly in the summary and suggest the closest features that do exist.
+
 ${untrustedNote}`;
 
 const lessonSystem = `You write short, interactive lessons that teach a developer how one feature of a real codebase works, so they could confidently change it. The learner reads code in a viewer next to each step.
@@ -31,6 +33,8 @@ Code references: files are shown with line numbers as "<number>| <code>". Cite a
 
 Write 5 to 8 steps.
 
+When the learner says what they want to learn or walk through, shape the lesson around that request: answer it directly, and if it asks how to add or change something, walk through every place that change would touch.
+
 ${untrustedNote}`;
 
 export type SuggestResult = {
@@ -39,6 +43,7 @@ export type SuggestResult = {
   summary: string;
   suggestions: FeatureSuggestion[];
   skipped: number;
+  goal?: string;
 };
 
 function numbered(text: string) {
@@ -51,7 +56,7 @@ function fileBlock(path: string, text: string) {
   return `<file path="${path}">\n${numbered(text)}\n</file>`;
 }
 
-export async function suggestFeatures(snapshot: Snapshot, index: RepoIndex, ask: AskModel): Promise<SuggestResult> {
+export async function suggestFeatures(snapshot: Snapshot, index: RepoIndex, ask: AskModel, goal?: string): Promise<SuggestResult> {
   const readme = [...snapshot.files.keys()].find(file => /^readme(?:\.md)?$/i.test(file));
   const context = [
     `<repository name="${snapshot.repo.owner}/${snapshot.repo.name}">`,
@@ -67,7 +72,7 @@ export async function suggestFeatures(snapshot: Snapshot, index: RepoIndex, ask:
   const draft = await ask({
     schema: DraftSuggestions,
     system: suggestSystem,
-    turns: [{role: 'user', content: `${context}\n\nSuggest features to learn in this repository.`}],
+    turns: [{role: 'user', content: `${context}\n\n${goal ? `The learner wants to learn or walk through: ${goal}` : 'Suggest features to learn in this repository.'}`}],
     effort: 'medium',
   });
 
@@ -92,7 +97,7 @@ export async function suggestFeatures(snapshot: Snapshot, index: RepoIndex, ask:
     throw new Error('No usable feature suggestions came back for this repository. Try again, or try another repository.');
   }
 
-  return {repo: snapshot.repo, description: snapshot.description, summary: draft.summary, suggestions, skipped: snapshot.skipped.length};
+  return {repo: snapshot.repo, description: snapshot.description, summary: draft.summary, suggestions, skipped: snapshot.skipped.length, ...(goal ? {goal} : {})};
 }
 
 export const contextBudgetBytes = 250_000;
@@ -166,7 +171,7 @@ export function selectFiles(snapshot: Snapshot, index: RepoIndex, suggestion: Fe
 
 export type GenerateResult = {lesson: Lesson; warnings: string[]};
 
-export async function generateLesson(snapshot: Snapshot, index: RepoIndex, suggestion: FeatureSuggestion, ask: AskModel): Promise<GenerateResult> {
+export async function generateLesson(snapshot: Snapshot, index: RepoIndex, suggestion: FeatureSuggestion, ask: AskModel, goal?: string): Promise<GenerateResult> {
   const selected = selectFiles(snapshot, index, suggestion);
   const files = new Map(selected.map(file => [file, snapshot.files.get(file)!]));
   const request = [
@@ -178,6 +183,7 @@ export async function generateLesson(snapshot: Snapshot, index: RepoIndex, sugge
     `Why it matters: ${suggestion.why}`,
     `Start from: ${suggestion.entryPoints.map(ref => `${ref.path}:${ref.startLine}`).join(', ')}`,
     suggestion.relatedIssues ? `Related open issues: ${suggestion.relatedIssues.map(issue => `#${issue.number} ${issue.title}`).join('; ')}` : '',
+    goal ? `The learner wants to learn or walk through: ${goal}` : '',
   ].filter(Boolean).join('\n');
 
   const turns: Turn[] = [{role: 'user', content: request}];

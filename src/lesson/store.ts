@@ -1,6 +1,7 @@
 import type {Lesson} from './types';
 
-export type SavedLesson = {lesson: Lesson; warnings: string[]; savedAt: string};
+// provider is the label of the AI that wrote the lesson, absent for the sample.
+export type SavedLesson = {lesson: Lesson; warnings: string[]; savedAt: string; provider?: string};
 
 const key = 'repository-trainer:lessons';
 
@@ -23,4 +24,22 @@ export function saveLesson(entry: SavedLesson): SavedLesson[] {
   }
 
   return next;
+}
+
+const providerKey = 'repository-trainer:provider';
+
+export function loadProviderChoice(): string | undefined {
+  try {
+    return localStorage.getItem(providerKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveProviderChoice(id: string) {
+  try {
+    localStorage.setItem(providerKey, id);
+  } catch {
+    // Not remembered; the default is picked next time.
+  }
 }

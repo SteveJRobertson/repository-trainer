@@ -216,14 +216,17 @@ describe('createApp', () => {
       return snapshot;
     }) as unknown as typeof fetchSnapshot;
     const suggestions: DraftSuggestions = {summary: 's', suggestions: [{id: 'start', title: 'Retries', why: 'w', entryPoints: [{path: 'src/index.ts', symbol: 'start'}]}]};
-    const {ask} = stubModel([suggestions, draft()]);
+    const {ask, calls} = stubModel([suggestions, draft()]);
     const app = createApp({ask, load});
     const post = (path: string, body: unknown) => app.request(path, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
 
-    const first = await (await post('/api/suggestions', {repo: 'https://github.com/o/r'})).json() as {suggestions: unknown[]};
-    const second = await post('/api/lessons', {repo: 'o/r', commit: snapshot.repo.commit, suggestion: first.suggestions[0]});
+    const goal = 'walk me through adding a retry option';
+    const first = await (await post('/api/suggestions', {repo: 'https://github.com/o/r', provider: 'chatgpt', goal})).json() as {suggestions: unknown[]; goal: string};
+    expect(first.goal).toBe(goal);
+    const second = await post('/api/lessons', {repo: 'o/r', commit: snapshot.repo.commit, suggestion: first.suggestions[0], provider: 'chatgpt', goal});
     expect(second.status).toBe(200);
     expect(loads).toBe(1);
+    expect(calls.map(call => call.turns[0].content.includes(`The learner wants to learn or walk through: ${goal}`))).toEqual([true, true]);
 
     const bad = await post('/api/suggestions', {repo: 'https://evil.example/x/y'});
     expect(bad.status).toBe(400);

@@ -2,15 +2,31 @@ import {Hono} from 'hono';
 import type {FeatureSuggestion} from '../src/lesson/types';
 import {buildIndex, type RepoIndex} from './analyse';
 import {fetchSnapshot, IngestError, parseRepoUrl, type Snapshot} from './github';
-import {createClaude, ModelError, type AskModel} from './model';
+import {ModelError, type AskModel} from './model';
 import {generateLesson, suggestFeatures} from './pipeline';
+import {createProvider, isProviderId, listProviders, type ProviderId} from './providers';
 
 type Loaded = {snapshot: Snapshot; index: RepoIndex};
 
 export function createApp(options: {ask?: AskModel; load?: typeof fetchSnapshot} = {}) {
   const load = options.load ?? fetchSnapshot;
-  let ask = options.ask;
-  const getAsk = () => (ask ??= createClaude());
+  // Tests pass one stub for every provider.
+  const models = new Map<ProviderId, AskModel>();
+  const getAsk = (provider: unknown) => {
+    if (options.ask) {
+      return options.ask;
+    }
+
+    if (!isProviderId(provider)) {
+      throw new ModelError('Choose Claude, ChatGPT or Gemini.');
+    }
+
+    if (!models.has(provider)) {
+      models.set(provider, createProvider(provider));
+    }
+
+    return models.get(provider)!;
+  };
 
   // Snapshots are pinned to a commit, so they can be reused between the
   // suggestion and lesson requests for as long as the dev server runs.
@@ -42,23 +58,38 @@ export function createApp(options: {ask?: AskModel; load?: typeof fetchSnapshot}
     return c.json({error: error.message}, expected ? 400 : 500);
   });
 
+  app.get('/providers', c => c.json(listProviders()));
+
   app.post('/suggestions', async c => {
-    const {repo} = await c.req.json<{repo: unknown}>();
+    const {repo, provider, goal} = await c.req.json<{repo: unknown; provider: unknown; goal: unknown}>();
     if (typeof repo !== 'string') {
       throw new IngestError('Enter a GitHub repository.');
     }
 
+    const ask = getAsk(provider);
     const {snapshot, index} = await loadRepo(repo);
     // Cache under the resolved commit too, so the lesson request hits it.
     cache.set(keyFor(repo, snapshot.repo.commit), Promise.resolve({snapshot, index}));
-    return c.json(await suggestFeatures(snapshot, index, getAsk()));
+    return c.json(await suggestFeatures(snapshot, index, ask, cleanGoal(goal)));
   });
 
   app.post('/lessons', async c => {
-    const {repo, commit, suggestion} = await c.req.json<{repo: string; commit: string; suggestion: FeatureSuggestion}>();
+    const {repo, commit, suggestion, provider, goal} = await c.req.json<{repo: string; commit: string; suggestion: FeatureSuggestion; provider: unknown; goal: unknown}>();
+    const ask = getAsk(provider);
     const {snapshot, index} = await loadRepo(repo, commit);
-    return c.json(await generateLesson(snapshot, index, suggestion, getAsk()));
+    return c.json(await generateLesson(snapshot, index, suggestion, ask, cleanGoal(goal)));
   });
 
   return app;
+}
+
+export const maxGoalLength = 500;
+
+function cleanGoal(goal: unknown) {
+  const text = typeof goal === 'string' ? goal.trim() : '';
+  if (text.length > maxGoalLength) {
+    throw new IngestError(`Keep what you want to learn under ${maxGoalLength} characters.`);
+  }
+
+  return text || undefined;
 }
