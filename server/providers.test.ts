@@ -1,7 +1,10 @@
+import {createServer} from 'node:http';
+import type {AddressInfo} from 'node:net';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
 import {createApp} from './app';
 import {jsonSchema, parseReply, strictSchema} from './jsonSchema';
+import {createOllama} from './ollama';
 import {createProvider, listProviders} from './providers';
 import {DraftLesson} from './schemas';
 
@@ -53,15 +56,62 @@ describe('providers', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', '');
     vi.stubEnv('OPENAI_API_KEY', 'sk-test');
     vi.stubEnv('GEMINI_API_KEY', '');
-    expect(listProviders().map(p => [p.id, p.available])).toEqual([['claude', false], ['chatgpt', true], ['gemini', false]]);
+    vi.stubEnv('OLLAMA_MODEL', '');
+    expect(listProviders().map(p => [p.id, p.available])).toEqual([['claude', false], ['chatgpt', true], ['gemini', false], ['ollama', false]]);
     expect(() => createProvider('gemini')).toThrow(/GEMINI_API_KEY/);
 
     const app = createApp();
-    expect(await (await app.request('/api/providers')).json()).toHaveLength(3);
+    expect(await (await app.request('/api/providers')).json()).toHaveLength(4);
     const post = (provider: unknown) => app.request('/api/suggestions', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({repo: 'o/r', provider})});
     const missing = await post('claude');
     expect(missing.status).toBe(400);
     expect(((await missing.json()) as {error: string}).error).toMatch(/ANTHROPIC_API_KEY/);
     expect((await post('llama')).status).toBe(400);
+  });
+});
+
+describe('Ollama', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('streams a structured reply from a local server and explains common failures', async () => {
+    const requests: {model: string; format: unknown; messages: {role: string}[]; options: {num_ctx: number}}[] = [];
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => (body += chunk));
+      req.on('end', () => {
+        const request = JSON.parse(body);
+        requests.push(request);
+        if (request.model === 'missing') {
+          res.writeHead(404, {'content-type': 'application/json'}).end(JSON.stringify({error: 'model "missing" not found'}));
+          return;
+        }
+
+        res.writeHead(200, {'content-type': 'application/x-ndjson'});
+        const reply = JSON.stringify({a: 'hi', b: null});
+        for (const piece of [reply.slice(0, 5), reply.slice(5)]) {
+          res.write(JSON.stringify({model: request.model, message: {role: 'assistant', content: piece}, done: false}) + '\n');
+        }
+
+        res.end(JSON.stringify({model: request.model, message: {role: 'assistant', content: ''}, done: true, done_reason: 'stop'}) + '\n');
+      });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const schema = z.object({a: z.string(), b: z.number().optional()});
+    const ask = {schema, system: 'sys', turns: [{role: 'user' as const, content: 'hi'}], effort: 'medium' as const};
+    try {
+      vi.stubEnv('OLLAMA_HOST', `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+      vi.stubEnv('OLLAMA_MODEL', 'qwen');
+      expect(await createOllama()(ask)).toEqual({a: 'hi'});
+      expect(requests[0]).toMatchObject({model: 'qwen', format: jsonSchema(schema), options: {num_ctx: 131072}});
+      expect(requests[0].messages.map(message => message.role)).toEqual(['system', 'user']);
+
+      vi.stubEnv('OLLAMA_MODEL', 'missing');
+      await expect(createOllama()(ask)).rejects.toThrow('ollama pull missing');
+    } finally {
+      server.close();
+    }
+
+    vi.stubEnv('OLLAMA_HOST', 'http://127.0.0.1:1');
+    await expect(createOllama()(ask)).rejects.toThrow(/Can't reach Ollama/);
   });
 });

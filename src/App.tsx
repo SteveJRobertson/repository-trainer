@@ -138,7 +138,7 @@ function Home({saved, onSuggestions, onOpen}: {saved: SavedLesson[]; onSuggestio
             {providers && (
               provider
                 ? available.length < providers.length && <span className="muted small">To enable the others, add {providers.filter(option => !option.available).map(option => option.keyVar).join(' or ')} to .env.local and restart.</span>
-                : <span className="error small">No AI model is set up. Add ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY to .env.local and restart the dev server.</span>
+                : <span className="error small">No AI model is set up. Add ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or OLLAMA_MODEL to .env.local and restart the dev server.</span>
             )}
           </fieldset>
           <button type="submit" className="primary" disabled={busy || repo.trim() === '' || !provider}>{busy ? 'Reading the repository…' : goal.trim() ? 'Find lessons' : 'Find features'}</button>

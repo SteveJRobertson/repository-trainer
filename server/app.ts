@@ -18,7 +18,7 @@ export function createApp(options: {ask?: AskModel; load?: typeof fetchSnapshot}
     }
 
     if (!isProviderId(provider)) {
-      throw new ModelError('Choose Claude, ChatGPT or Gemini.');
+      throw new ModelError('Choose Claude, ChatGPT, Gemini or Ollama.');
     }
 
     if (!models.has(provider)) {

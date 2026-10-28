@@ -17,6 +17,7 @@
     "@google/genai": "^2.31.0",
     "@hono/node-server": "^2.1.5",
     "hono": "^4.13.14",
+    "ollama": "^0.6.4",
     "openai": "^7.45.1",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.3.1",
