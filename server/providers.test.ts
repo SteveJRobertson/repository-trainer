@@ -1,7 +1,13 @@
+import {createServer} from 'node:http';
+import type {AddressInfo} from 'node:net';
+import {simulateReadableStream} from 'ai';
+import {MockLanguageModelV4} from 'ai/test';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
 import {createApp} from './app';
 import {jsonSchema, parseReply, strictSchema} from './jsonSchema';
+import {createOllama} from './ollama';
+import {createVercel} from './gateway';
 import {createProvider, listProviders} from './providers';
 import {DraftLesson} from './schemas';
 
@@ -53,15 +59,99 @@ describe('providers', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', '');
     vi.stubEnv('OPENAI_API_KEY', 'sk-test');
     vi.stubEnv('GEMINI_API_KEY', '');
-    expect(listProviders().map(p => [p.id, p.available])).toEqual([['claude', false], ['chatgpt', true], ['gemini', false]]);
+    vi.stubEnv('AI_GATEWAY_API_KEY', '');
+    vi.stubEnv('OLLAMA_MODEL', '');
+    expect(listProviders().map(p => [p.id, p.available])).toEqual([['claude', false], ['chatgpt', true], ['gemini', false], ['vercel', false], ['ollama', false]]);
     expect(() => createProvider('gemini')).toThrow(/GEMINI_API_KEY/);
 
     const app = createApp();
-    expect(await (await app.request('/api/providers')).json()).toHaveLength(3);
+    expect(await (await app.request('/api/providers')).json()).toHaveLength(5);
     const post = (provider: unknown) => app.request('/api/suggestions', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({repo: 'o/r', provider})});
     const missing = await post('claude');
     expect(missing.status).toBe(400);
     expect(((await missing.json()) as {error: string}).error).toMatch(/ANTHROPIC_API_KEY/);
     expect((await post('llama')).status).toBe(400);
+  });
+});
+
+describe('Ollama', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('streams a structured reply from a local server and explains common failures', async () => {
+    const requests: {model: string; format: unknown; messages: {role: string}[]; options: {num_ctx: number}}[] = [];
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => (body += chunk));
+      req.on('end', () => {
+        const request = JSON.parse(body);
+        requests.push(request);
+        if (request.model === 'missing') {
+          res.writeHead(404, {'content-type': 'application/json'}).end(JSON.stringify({error: 'model "missing" not found'}));
+          return;
+        }
+
+        res.writeHead(200, {'content-type': 'application/x-ndjson'});
+        const reply = JSON.stringify({a: 'hi', b: null});
+        for (const piece of [reply.slice(0, 5), reply.slice(5)]) {
+          res.write(JSON.stringify({model: request.model, message: {role: 'assistant', content: piece}, done: false}) + '\n');
+        }
+
+        res.end(JSON.stringify({model: request.model, message: {role: 'assistant', content: ''}, done: true, done_reason: 'stop'}) + '\n');
+      });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const schema = z.object({a: z.string(), b: z.number().optional()});
+    const ask = {schema, system: 'sys', turns: [{role: 'user' as const, content: 'hi'}], effort: 'medium' as const};
+    try {
+      vi.stubEnv('OLLAMA_HOST', `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+      vi.stubEnv('OLLAMA_MODEL', 'qwen');
+      expect(await createOllama()(ask)).toEqual({a: 'hi'});
+      expect(requests[0]).toMatchObject({model: 'qwen', format: jsonSchema(schema), options: {num_ctx: 131072}});
+      expect(requests[0].messages.map(message => message.role)).toEqual(['system', 'user']);
+
+      vi.stubEnv('OLLAMA_MODEL', 'missing');
+      await expect(createOllama()(ask)).rejects.toThrow('ollama pull missing');
+    } finally {
+      server.close();
+    }
+
+    vi.stubEnv('OLLAMA_HOST', 'http://127.0.0.1:1');
+    await expect(createOllama()(ask)).rejects.toThrow(/Can't reach Ollama/);
+  });
+});
+
+describe('Vercel AI Gateway', () => {
+  const ask = (schema: z.ZodType) => ({schema, system: 'sys', turns: [{role: 'user' as const, content: 'hi'}], effort: 'high' as const});
+  const finish = (reason: string) => ({type: 'finish', finishReason: {unified: reason, raw: reason}, usage: {inputTokens: {total: 1}, outputTokens: {total: 1}}});
+
+  it('streams structured output and parses it against the zod schema', async () => {
+    const reply = JSON.stringify({a: 'hi', b: null});
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({chunks: [
+          {type: 'text-start', id: 't'},
+          {type: 'text-delta', id: 't', delta: reply.slice(0, 4)},
+          {type: 'text-delta', id: 't', delta: reply.slice(4)},
+          {type: 'text-end', id: 't'},
+          finish('stop'),
+        ] as never[]}),
+      }),
+    });
+    const schema = z.object({a: z.string(), b: z.number().optional()});
+    expect(await createVercel(model)(ask(schema))).toEqual({a: 'hi'});
+    const call = model.doStreamCalls[0];
+    expect(call.responseFormat).toMatchObject({type: 'json', schema: jsonSchema(schema)});
+    expect(call.providerOptions).toMatchObject({openai: {reasoningEffort: 'high'}});
+  });
+
+  it('reports a cut-off reply and gateway auth failures clearly', async () => {
+    const cut = new MockLanguageModelV4({
+      doStream: async () => ({stream: simulateReadableStream({chunks: [{type: 'text-start', id: 't'}, {type: 'text-delta', id: 't', delta: '{"a":'}, {type: 'text-end', id: 't'}, finish('length')] as never[]})}),
+    });
+    await expect(createVercel(cut)(ask(z.object({a: z.string()})))).rejects.toThrow(/ran out of room/);
+
+    const auth = Object.assign(new Error('bad key'), {name: 'GatewayAuthenticationError'});
+    const failing = new MockLanguageModelV4({doStream: async () => { throw auth; }});
+    await expect(createVercel(failing)(ask(z.object({a: z.string()})))).rejects.toThrow(/AI_GATEWAY_API_KEY/);
   });
 });

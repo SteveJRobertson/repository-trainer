@@ -16,7 +16,11 @@ cp .env.example .env.local   # then add at least one AI key
 npm run dev                  # http://localhost:5173
 ```
 
-You can generate lessons with Claude, ChatGPT or Gemini. Add a key for any of them to `.env.local` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`), and pick one on the home screen. Only providers with a key can be picked. Each has a default model that you can override with `CLAUDE_MODEL`, `OPENAI_MODEL` or `GEMINI_MODEL`, and `OPENAI_BASE_URL` points ChatGPT requests at a company gateway or other OpenAI-compatible endpoint.
+You can generate lessons with Claude, ChatGPT, Gemini, Vercel AI Gateway or a local model through Ollama. Add a key for any of them to `.env.local` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` or `AI_GATEWAY_API_KEY`), and pick one on the home screen. Only providers with a key can be picked. Each has a default model that you can override with `CLAUDE_MODEL`, `OPENAI_MODEL`, `GEMINI_MODEL` or `AI_GATEWAY_MODEL`, and `OPENAI_BASE_URL` points ChatGPT requests at a company gateway or other OpenAI-compatible endpoint.
+
+**Vercel AI Gateway** gives one key for models from many providers, named as `provider/model`. It defaults to `openai/gpt-5.5`, so it's a way to use GPT without an OpenAI key. Set `AI_GATEWAY_MODEL` to any model in the [gateway's list](https://vercel.com/ai-gateway/models), such as an Anthropic or Google one.
+
+**Ollama** is free and keeps your code on your machine. Install it from [ollama.com](https://ollama.com), run `ollama pull <model>`, and set `OLLAMA_MODEL` to that model. A lesson sends up to about 70k tokens, so use a model with a long context window and expect it to need a good GPU or plenty of memory. Smaller models make more mistakes; the reference checker removes the ones it catches, so their lessons can come out shorter. `OLLAMA_HOST` and `OLLAMA_NUM_CTX` (default 131072) are optional.
 
 A ChatGPT subscription is not the same as API access: ChatGPT needs an API key from [platform.openai.com](https://platform.openai.com/api-keys), or one issued by your company.
 
@@ -40,7 +44,7 @@ Other scripts:
 
 ## Layout
 
-- `server/` the API: GitHub ingestion, indexing, prompts, grounding, and the Claude (`model.ts`), ChatGPT (`openai.ts`) and Gemini (`gemini.ts`) providers
+- `server/` the API: GitHub ingestion, indexing, prompts, grounding, and the Claude (`model.ts`), ChatGPT (`openai.ts`), Gemini (`gemini.ts`), Vercel AI Gateway (`gateway.ts`) and Ollama (`ollama.ts`) providers
 - `src/lesson/` lesson types, validator, file loading, progress and saved lessons
 - `src/components/` code viewer, flow diagram and activities
 - `src/lessons/` lesson JSON files

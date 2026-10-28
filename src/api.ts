@@ -9,7 +9,7 @@ export type SuggestResponse = {
   goal?: string;
 };
 
-export type ProviderId = 'claude' | 'chatgpt' | 'gemini';
+export type ProviderId = 'claude' | 'chatgpt' | 'gemini' | 'vercel' | 'ollama';
 export type ProviderInfo = {id: ProviderId; label: string; keyVar: string; available: boolean};
 
 export type LessonResponse = {lesson: Lesson; warnings: string[]};
