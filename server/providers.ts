@@ -1,9 +1,10 @@
+import {createVercel} from './gateway';
 import {createGemini} from './gemini';
 import {createClaude, ModelError, type AskModel} from './model';
 import {createOllama} from './ollama';
 import {createChatGpt} from './openai';
 
-export const providerIds = ['claude', 'chatgpt', 'gemini', 'ollama'] as const;
+export const providerIds = ['claude', 'chatgpt', 'gemini', 'vercel', 'ollama'] as const;
 export type ProviderId = (typeof providerIds)[number];
 
 export type ProviderInfo = {id: ProviderId; label: string; keyVar: string; available: boolean};
@@ -12,6 +13,7 @@ const providers: Record<ProviderId, {label: string; keyVar: string; create: () =
   claude: {label: 'Claude', keyVar: 'ANTHROPIC_API_KEY', create: createClaude},
   chatgpt: {label: 'ChatGPT', keyVar: 'OPENAI_API_KEY', create: createChatGpt},
   gemini: {label: 'Gemini', keyVar: 'GEMINI_API_KEY', create: createGemini},
+  vercel: {label: 'Vercel AI Gateway', keyVar: 'AI_GATEWAY_API_KEY', create: () => createVercel()},
   // Ollama needs no key; naming a model is what turns it on.
   ollama: {label: 'Ollama (local)', keyVar: 'OLLAMA_MODEL', create: createOllama},
 };

@@ -127,3 +127,4 @@ Every option carries its own feedback, so a wrong answer explains itself and lin
 - The learner picks the AI provider: Claude, ChatGPT or Gemini, so the tool works where only some are approved. All three share one structured-output interface and the same grounding (2026-10-27).
 - The learner can say what they want to learn or walk through. That request steers both the suggestions and the lesson (2026-10-27).
 - Ollama is a fourth provider, for free local models where code must stay on the machine (2026-10-28).
+- Vercel AI Gateway is a fifth provider, so GPT models can be used where an OpenAI key isn't available (2026-10-28).
